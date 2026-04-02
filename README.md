@@ -50,7 +50,7 @@ Landmark sampling is fair across patterns — one pattern won't dominate.
 
 ## Features
 
-- **Progress bar filtering** — tqdm bars, HF weight loading bars, and download progress are automatically stripped
+- **Progress bar collapsing** — tqdm bars, HF weight loading, and downloads are collapsed to their latest update (50 progress lines → 1 showing current state)
 - **Auto-retry on resource limits** — if Modal's API rejects a large `tail`, automatically retries with smaller values and tells you what happened
 - **Error deduplication** — 10,000 identical `[Error]` lines become a handful of unique entries
 - **Case-sensitive error detection** — won't false-positive on metric names like `rot_align_error`
