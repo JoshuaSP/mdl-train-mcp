@@ -35,23 +35,50 @@ def _strip_ansi(s: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07", "", s)
 
 
-# Progress bar patterns — these generate hundreds of lines of noise
-_PROGRESS_BAR_RE = re.compile(
-    r"\d+%\|[█▏▎▍▌▋▊▉░▒▓ ]*\|"  # tqdm-style: "  5%|██         |"
-    r"|Downloading.*\d+\.\d+[kMG]"  # HF downloads: "Downloading model.safetensors... 2.3G"
-    r"|Loading.*shards?.*\d+/\d+"    # HF weight loading: "Loading checkpoint shards: 2/4"
-    r"|\r.*\d+%"                      # Carriage-return progress updates
-)
-
-
 def _is_progress_bar(line: str) -> bool:
-    """Detect progress bar lines that add noise without information."""
-    # Quick checks before regex
+    """Detect progress bar lines."""
     if "%" in line and ("|" in line or "█" in line or "░" in line):
         return True
-    if line.startswith(("\r", "  0%", " 10%", " 20%", " 30%", " 40%", " 50%", " 60%", " 70%", " 80%", " 90%", "100%")):
+    if re.match(r"\s*\d+%\|", line):
         return True
-    return bool(_PROGRESS_BAR_RE.search(line))
+    if re.search(r"Loading.*shards?.*\d+/\d+", line):
+        return True
+    if re.search(r"Downloading.*\d+\.\d+[kMG]", line):
+        return True
+    return False
+
+
+def _progress_bar_key(line: str) -> str | None:
+    """Extract a stable key for a progress bar so we can collapse updates.
+    Returns None if we can't determine a key (treat as unique)."""
+    # tqdm: "  5%|██ | 1/20 [..." → key is everything after the last |
+    # but that changes. Better: strip the dynamic parts.
+    # For "Loading checkpoint shards: 2/4" → "Loading checkpoint shards"
+    m = re.match(r"(Loading.*shards?)", line)
+    if m:
+        return m.group(1)
+    # For "Downloading model-00001.safetensors" → "Downloading model-00001.safetensors"
+    m = re.match(r"(Downloading\s+\S+)", line)
+    if m:
+        return m.group(1)
+    # For tqdm bars, key on description prefix + total count
+    # "  5%|██| 1/20 [00:03<00:57]" → key is "tqdm:20" (the total)
+    # "desc:  5%|██| 1/20" → key is "desc:20"
+    m = re.match(r"(.*?)\s*\d+%\|", line)
+    prefix = m.group(1).strip() if m else ""
+    # Extract the "/N" total from "X/N"
+    total_m = re.search(r"\d+/(\d+)", line)
+    total = total_m.group(1) if total_m else ""
+    if total:
+        return f"{prefix}:{total}" if prefix else f"tqdm:{total}"
+    if prefix:
+        return prefix
+    # Generic: "X/Y" pattern like "3/4" — key on text before it
+    m = re.match(r"(.*?)\d+/\d+", line)
+    if m and m.group(1).strip():
+        return m.group(1).strip()
+    # Last resort for bare progress bars — collapse all unknown bars together
+    return "_progress"
 
 
 async def _run_modal(*args: str, timeout: int = 30) -> tuple[str, str, int]:
@@ -126,20 +153,27 @@ async def _fetch_log_lines(app_id: str, tail: int = 500, since: str | None = Non
         return f"modal app logs failed: {err}"
 
     raw_lines = stdout.split("\n")
+
+    # First pass: clean lines, collapse progress bars (keep last update per bar)
     lines = []
+    progress_bars: dict[str, int] = {}  # key → index in lines
     for line in raw_lines:
         cleaned = _strip_ansi(line).rstrip()
         if not cleaned:
             continue
-        # Skip spinner lines
         if cleaned.startswith(("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")):
             continue
-        # Skip progress bars (tqdm, HF transformers weight loading, etc.)
         if _is_progress_bar(cleaned):
-            continue
+            key = _progress_bar_key(cleaned)
+            if key and key in progress_bars:
+                # Replace the previous update for this bar
+                lines[progress_bars[key]] = cleaned
+                continue
+            elif key:
+                progress_bars[key] = len(lines)
         lines.append(cleaned)
 
-    # Deduplicate consecutive identical lines
+    # Second pass: deduplicate consecutive identical lines
     deduped = []
     for line in lines:
         if not deduped or line != deduped[-1]:
