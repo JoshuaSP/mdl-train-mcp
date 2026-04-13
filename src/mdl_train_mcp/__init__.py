@@ -15,7 +15,19 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("modal")
+mcp = FastMCP(
+    "mdl — Modal Training Monitor",
+    instructions="""\
+This is the Modal (mdl) MCP server for monitoring GPU training jobs.
+
+Use these tools when the user asks about:
+- Modal apps, training runs, or GPU jobs
+- Checking what's running, reading logs, or stopping apps
+- Training progress, errors, crashes, or resource usage on Modal
+
+Workflow: list_apps → get_logs (summary first, then window/grep to drill in) → stop_app if needed.
+""",
+)
 
 MODAL_BIN = os.environ.get("MODAL_BIN", "modal")
 MODAL_PROFILE = os.environ.get("MODAL_PROFILE", "")
