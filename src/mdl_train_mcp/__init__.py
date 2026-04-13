@@ -21,7 +21,7 @@ mcp = FastMCP(
 This is the Modal (mdl) MCP server for monitoring apps running on Modal.
 
 Use these tools when the user asks about:
-- Modal apps or jobs specifically (not all training runs — some run on GCP or other infra)
+- Modal apps or jobs
 - Checking what's running on Modal, reading Modal logs, or stopping Modal apps
 
 Workflow: list_apps → get_logs (summary first, then window/grep to drill in) → stop_app if needed.
