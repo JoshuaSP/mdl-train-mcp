@@ -434,24 +434,27 @@ async def get_logs(
 # ---------------------------------------------------------------------------
 
 STOP_APP_DESC = """\
-Stop a running Modal app.
+Stop one or more running Modal apps.
 
 Args:
-  - app_id: the Modal app ID (e.g. "ap-gIhexzrmZnZD1b04mJuiiq") or app name
+  - app_ids: list of Modal app IDs (e.g. ["ap-abc123", "ap-def456"]) or app names
 
-Returns confirmation or error message. This is irreversible — the app and its \
-containers will be terminated.
+Returns per-app status. This is irreversible — apps and their containers will be terminated.
 """
 
 
 @mcp.tool(description=STOP_APP_DESC)
 async def stop_app(
-    app_id: str,
+    app_ids: list[str],
 ) -> str:
-    stdout, stderr, rc = await _run_modal("app", "stop", app_id)
-    if rc != 0:
-        return json.dumps({"error": f"Failed to stop {app_id}: {stderr}"})
-    return json.dumps({"status": "stopped", "app_id": app_id})
+    results = []
+    for app_id in app_ids:
+        stdout, stderr, rc = await _run_modal("app", "stop", app_id)
+        if rc != 0:
+            results.append({"app_id": app_id, "status": "error", "error": _strip_ansi(stderr).strip()})
+        else:
+            results.append({"app_id": app_id, "status": "stopped"})
+    return json.dumps({"results": results})
 
 
 # ---------------------------------------------------------------------------
