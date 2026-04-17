@@ -272,7 +272,10 @@ LIST_APPS_DESC = """\
 List Modal apps — running, deployed, and recently stopped.
 
 Filtering (all optional):
-  - state: filter by state substring — "running", "deployed", "stopped", "ephemeral", "detached"
+  - state: filter by state — "running", "deployed", "stopped". \
+"running" matches ANY live app (including "ephemeral (detached)" from --detach jobs).
+  - live: if true, return only apps with at least one running task. \
+This is the most reliable "is anything burning GPU right now?" filter.
   - name_contains: substring match on app description/name (case-insensitive)
 
 Returns: app_id, description, state, running task count, created_at, stopped_at.
@@ -282,6 +285,7 @@ Returns: app_id, description, state, running task count, created_at, stopped_at.
 @mcp.tool(description=LIST_APPS_DESC)
 async def list_apps(
     state: str | None = None,
+    live: bool = False,
     name_contains: str | None = None,
 ) -> str:
     stdout, stderr, rc = await _run_modal("app", "list", "--json")
@@ -301,9 +305,18 @@ async def list_apps(
             "stopped_at": a.get("Stopped at"),
         })
 
+    if live:
+        normalized = [a for a in normalized if a["tasks"] > 0]
     if state:
         state_lower = state.lower()
-        normalized = [a for a in normalized if state_lower in a["state"].lower()]
+        # "running" should match ephemeral/detached apps — they're running
+        if state_lower == "running":
+            normalized = [a for a in normalized if
+                          a["state"].lower() in ("running",) or
+                          "ephemeral" in a["state"].lower() or
+                          a["tasks"] > 0]
+        else:
+            normalized = [a for a in normalized if state_lower in a["state"].lower()]
     if name_contains:
         name_lower = name_contains.lower()
         normalized = [a for a in normalized if name_lower in a["description"].lower()]
