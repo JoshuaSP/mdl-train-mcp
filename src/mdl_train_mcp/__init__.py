@@ -118,7 +118,8 @@ class _FetchResult:
 
 
 async def _fetch_log_lines(app_id: str, tail: int = 500, since: str | None = None,
-                           until: str | None = None, source: str | None = None) -> _FetchResult | str:
+                           until: str | None = None, source: str | None = None,
+                           timestamps: bool = False) -> _FetchResult | str:
     """Fetch and clean log lines from Modal. Returns _FetchResult or error string.
     Auto-retries with smaller tail if Modal's API hits resource limits."""
 
@@ -130,6 +131,8 @@ async def _fetch_log_lines(app_id: str, tail: int = 500, since: str | None = Non
             cmd.extend(["--until", until])
         if source:
             cmd.extend(["--source", source])
+        if timestamps:
+            cmd.append("--timestamps")
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=_modal_env(),
         )
@@ -348,6 +351,8 @@ Increase if you need to search further back in time; use "since" for time-based 
   - landmark_patterns: list of regex patterns to highlight in summary mode. \
 These create a "table of contents" showing where matching lines appear. \
 Examples: ["Iteration \\\\d+", "reward", "checkpoint", "saving"]
+  - timestamps: if true, prefix each log line with its timestamp. Useful for \
+correlating events across ranks or measuring time between log entries.
 """
 
 
@@ -363,12 +368,13 @@ async def get_logs(
     grep: str | None = None,
     grep_context: int = 0,
     landmark_patterns: list[str] | None = None,
+    timestamps: bool = False,
 ) -> str:
     tail = min(tail, 5000)
     window_size = min(window_size, 200)
     grep_context = min(grep_context, 30)
 
-    fetch = await _fetch_log_lines(app_id, tail=tail, since=since, until=until, source=source)
+    fetch = await _fetch_log_lines(app_id, tail=tail, since=since, until=until, source=source, timestamps=timestamps)
     if isinstance(fetch, str):
         return json.dumps({"error": fetch})
     lines = fetch.lines
